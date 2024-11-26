@@ -67,9 +67,29 @@ streamlit run frontend.py
 
 ---
 
-### 🛠️ 開發者
-- **開發者**: 你的名字或團隊名稱
-- **聯絡方式**: 你的聯絡方式
+### 貢獻指南
+
+歡迎對本專案進行改進！請按照以下步驟發起 Pull Request：
+
+1. **Fork 專案**：點擊右上角 **Fork**，並將專案克隆到您的本地環境。
+   ```bash
+   git clone https://github.com/your-username/Introduction-to-Data-Science.git
+   cd Introduction-to-Data-Science/final\ project
+   ```
+
+2. **創建分支**：為您的功能或修復創建新分支。
+   ```bash
+   git checkout -b your-feature-branch
+   ```
+
+3. **提交更改**：進行修改後，提交代碼並推送到您的遠端儲存庫。
+   ```bash
+   git add .
+   git commit -m "描述您的更改"
+   git push origin your-feature-branch
+   ```
+
+4. **發起 Pull Request**：返回 GitHub，點擊 **Compare & pull request**，提交您的更改描述。
 
 ---
 
