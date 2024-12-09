@@ -1,4 +1,5 @@
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # 加載清理後的數據集
 try:
@@ -90,3 +91,19 @@ def generate_optimized_suggestions(input_foods, tdee, health_goal):
 
     return suggestions
 
+def plot_nutrition_trends(data):
+    """
+    繪製營養攝取趨勢圖
+    :param data: pandas DataFrame，包含用戶的營養數據
+    """
+    data["date"] = pd.to_datetime(data["date"])
+    data.set_index("date", inplace=True)
+
+    # 繪製每種營養素的趨勢
+    data[["calories", "protein", "fats", "carbs"]].plot(figsize=(10, 6))
+    plt.title("營養攝取趨勢")
+    plt.xlabel("日期")
+    plt.ylabel("攝取量")
+    plt.legend(["卡路里", "蛋白質", "脂肪", "碳水化合物"])
+    plt.grid(True)
+    plt.show()
