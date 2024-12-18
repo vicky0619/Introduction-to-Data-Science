@@ -1,15 +1,20 @@
 import pandas as pd
-import matplotlib.pyplot as plt
+import pickle
+import os
 
-# 加載清理後的數據集
-try:
-    df_selected = pd.read_csv("/Users/vickyt/Desktop/University/大三/資料科學導論/final project/cleaned_food_data.csv")
-    # 確保所有列名一致
-    df_selected.columns = df_selected.columns.str.strip()
-except FileNotFoundError:
-    raise FileNotFoundError("Could not find the 'cleaned_food_data.csv' file.")
+# 載入模型和數據
+model_path = "xgboost_recommendation_model.pkl"
+recipes_path = "processed_recipes.csv"
+food_data_path = "cleaned_food_data.csv"
+cleaned_food_data = pd.read_csv(food_data_path)
 
-# 基本參數
+if os.path.exists(model_path) and os.path.exists(recipes_path):
+    with open(model_path, 'rb') as f:
+        xgboost_model = pickle.load(f)
+    recipes_df = pd.read_csv(recipes_path)
+else:
+    raise FileNotFoundError("模型或推薦菜餚數據檔案未找到！")
+
 base_dri = {
     'Calories': 2000,
     'Protein': 50,
@@ -19,91 +24,75 @@ base_dri = {
     'Sugar': 50
 }
 
-goal_factor = {'weight_loss': 0.8, 'maintain': 1.0, 'muscle_gain': 1.2}
-# 活動水平對應轉換字典
-activity_mapping = {
-    "無活動（久坐）": "sedentary",
-    "輕量活動（每周運動1-3天）": "light",
-    "中度活動量（每周運動3-5天）": "moderate",
-    "高度活動量（每周運動6-7天）": "active",
-    "非常高度活動量（勞力型工作）": "very_active"
-}
-
-# 活動水平對應的 TDEE 係數
-activity_factor = {
-    "sedentary": 1.2,      # 無活動（久坐）
-    "light": 1.375,        # 輕量活動
-    "moderate": 1.55,      # 中度活動
-    "active": 1.725,       # 高度活動
-    "very_active": 1.9     # 非常高度活動
-}
-
-
-
 # 計算 BMR
 def calculate_bmr(weight, height, age, gender):
     if gender == "男":
         return (13.7 * weight) + (5.0 * height) - (6.8 * age) + 66
-    else:  # 女
+    else:
         return (9.6 * weight) + (1.8 * height) - (4.7 * age) + 655
-
 
 # 計算 TDEE
 def calculate_tdee(bmr, activity_level):
-    activity_level = activity_mapping[activity_level]  # 轉換活動水平
-    return bmr * activity_factor[activity_level]
+    activity_factor = {
+        "無活動（久坐）": 1.2,
+        "輕量活動（每周運動1-3天）": 1.375,
+        "中度活動量（每周運動3-5天）": 1.55,
+        "高度活動量（每周運動6-7天）": 1.725,
+        "非常高度活動量（勞力型工作）": 1.9
+    }
+    return bmr * activity_factor.get(activity_level, 1.2)
 
-
-# 生成健康建議（基於 TDEE）
+# 生成健康建議
 def generate_optimized_suggestions(input_foods, tdee, health_goal):
-    # 根據 TDEE 和健康目標調整 DRI
-    adjusted_dri = {nutrient: base_dri[nutrient] * (tdee / 2000) * goal_factor[health_goal]
-                    for nutrient in base_dri}
+    # 調整後的每日推薦攝取量 (DRI)
+    goal_factor = {'weight_loss': 0.8, 'maintain': 1.0, 'muscle_gain': 1.2}
+    
+    adjusted_dri = {k: v * (tdee / 2000) * goal_factor[health_goal] for k, v in base_dri.items()}
+    
+    # 計算營養結果
+    total_nutrition = calculate_total_nutrition(input_foods)
 
-    # 確保列名一致
-    if 'Food' in input_foods:
-        input_foods['Food Name'] = input_foods.pop('Food')
-
-    user_data = pd.DataFrame(input_foods)
-
-    # 合併數據
-    try:
-        merged_data = user_data.merge(df_selected, on='Food Name', how='left')
-    except KeyError:
-        raise KeyError("Column 'Food Name' not found in dataset or input data.")
-
-    # 計算營養攝取總量
-    for col in ['Calories', 'Protein', 'Fats', 'Carbs', 'Fiber', 'Sugar']:
-        merged_data[col] = merged_data[col] * merged_data['Quantity'] / 100
-
-    total_nutrition = merged_data[['Calories', 'Protein', 'Fats', 'Carbs', 'Fiber', 'Sugar']].sum()
-
-    # 比較用戶攝取量與調整後的 DRI 值
-    suggestions = {}
-    for nutrient, dri_value in adjusted_dri.items():
-        intake = total_nutrition[nutrient]
-        if intake > dri_value:
-            suggestions[nutrient] = f"Your {nutrient} intake is too high ({intake:.1f} vs {dri_value:.1f}). Reduce foods like Bread, Apple, Chicken Breast."
-        elif intake < dri_value * 0.8:
-            suggestions[nutrient] = f"Your {nutrient} intake is too low ({intake:.1f} vs {dri_value:.1f}). Increase foods like Chicken Breast, Bread, Apple."
+    # 比較攝取量與 DRI，生成建議
+    recommendations = {}
+    for nutrient, value in total_nutrition.items():
+        if value > adjusted_dri[nutrient]:
+            recommendations[nutrient] = f"Your {nutrient} intake is too high ({value:.1f} vs {adjusted_dri[nutrient]:.1f})."
+        elif value < adjusted_dri[nutrient]:
+            recommendations[nutrient] = f"Your {nutrient} intake is too low ({value:.1f} vs {adjusted_dri[nutrient]:.1f})."
         else:
-            suggestions[nutrient] = f"Your {nutrient} intake is within the recommended range ({intake:.1f} vs {dri_value:.1f})."
+            recommendations[nutrient] = f"Your {nutrient} intake is within the recommended range ({value:.1f})."
 
-    return suggestions
+    return recommendations
 
-def plot_nutrition_trends(data):
-    """
-    繪製營養攝取趨勢圖
-    :param data: pandas DataFrame，包含用戶的營養數據
-    """
-    data["date"] = pd.to_datetime(data["date"])
-    data.set_index("date", inplace=True)
+def calculate_total_nutrition(input_foods):
+    # 查找並合併營養數據
+    food_nutrition = []
+    for food in input_foods:
+        # 從 cleaned_food_data 中查找 Food Name
+        food_info = cleaned_food_data[cleaned_food_data['Food Name'] == food['Food Name']]
 
-    # 繪製每種營養素的趨勢
-    data[["calories", "protein", "fats", "carbs"]].plot(figsize=(10, 6))
-    plt.title("營養攝取趨勢")
-    plt.xlabel("日期")
-    plt.ylabel("攝取量")
-    plt.legend(["卡路里", "蛋白質", "脂肪", "碳水化合物"])
-    plt.grid(True)
-    plt.show()
+        if not food_info.empty:
+            food_info = food_info.iloc[0]  # 取出匹配的第一行數據
+            quantity = food['Quantity']  # 使用 input_foods 中的 Quantity(g)
+            food_nutrition.append({
+                "Food Name": food['Food Name'],
+                "Calories": food_info['Calories'] * quantity / 100,
+                "Protein": food_info['Protein'] * quantity / 100,
+                "Fats": food_info['Fats'] * quantity / 100,
+                "Fiber": food_info['Fiber'] * quantity / 100,
+                "Carbs": food_info['Carbs'] * quantity / 100,
+                "Sugar": food_info['Sugar'] * quantity / 100
+            })
+
+    # 計算總營養
+    total_nutrition = {"Calories": 0, "Protein": 0, "Fiber": 0, "Fats": 0, "Carbs": 0, "Sugar": 0}
+    for food in food_nutrition:
+        total_nutrition["Calories"] += food["Calories"]
+        total_nutrition["Protein"] += food["Protein"]
+        total_nutrition["Fats"] += food["Fats"]
+        total_nutrition["Fiber"] += food["Fiber"]
+        total_nutrition["Carbs"] += food["Carbs"]
+        total_nutrition["Sugar"] += food["Sugar"]
+
+    return total_nutrition
+

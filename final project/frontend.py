@@ -1,7 +1,9 @@
+import os
 import streamlit as st
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 st.set_page_config(
     page_title="Health and Nutrition Recommendation System",
@@ -46,22 +48,74 @@ if st.button("💡 計算 BMR 和 TDEE"):
 if st.session_state.bmr and st.session_state.tdee:
     st.info(f"💡 **BMR:** {st.session_state.bmr:.1f} kcal/day, **TDEE:** {st.session_state.tdee:.1f} kcal/day")
 
-# 輸入飲食內容
-st.header("🍴 輸入您的飲食內容進行分析")
+# 修改的標題
+st.header("🍴 輸入您的飲食內容")
+
+# 新增日期欄位，預設為今天日期
+date = st.date_input("日期:", value=datetime.today().date())
+
 food_names = st.text_input("食物名稱（以逗號分隔）:", placeholder="例如：Apple, Chicken Breast")
 quantities = st.text_input("食物數量（以逗號分隔，單位為克）:", placeholder="例如：150, 200")
+
+# ✅新增輸入按鈕
+if st.button("✅輸入"):
+    try:
+        # 加載合法食物名稱
+        cleaned_data_path = "cleaned_food_data.csv"
+        if not os.path.exists(cleaned_data_path):
+            st.error("系統無法找到基礎食品數據庫！請聯繫管理員。")
+        else:
+            valid_foods = pd.read_csv(cleaned_data_path)['Food Name'].str.strip().tolist()
+
+        # 獲取輸入數據
+        input_date = str(date)  # 日期
+        input_food_names = [name.strip() for name in food_names.split(",")]  # 食物名稱列表
+        input_quantities = [qty.strip() for qty in quantities.split(",")]  # 食物數量列表
+
+        # 檢查食物名稱是否合法
+        invalid_foods = [name for name in input_food_names if name not in valid_foods]
+
+        if invalid_foods:
+            st.error(f"以下食物無法識別，請檢查後重新輸入: {', '.join(invalid_foods)}")
+        else:
+            # 構建輸入數據的 DataFrame
+            new_data = pd.DataFrame({
+                "Date": [input_date] * len(input_food_names),
+                "Food Name": input_food_names,
+                "Quantity": [int(qty) for qty in input_quantities]
+            })
+
+            # 定義 CSV 文件路徑
+            csv_file_path = "user_food_log.csv"
+
+            # 檢查 CSV 是否存在
+            if not os.path.exists(csv_file_path):
+                new_data.to_csv(csv_file_path, index=False)
+            else:
+                new_data.to_csv(csv_file_path, mode='a', header=False, index=False)
+
+            st.success("已成功保存輸入的飲食記錄！")
+    except Exception as e:
+        st.error(f"保存飲食記錄時發生錯誤: {e}")
+
+# 新增「輸入分析日期」欄位及標題
+st.subheader("🍴 輸入您要進行分析飲食內容的日期")
+analysis_date = st.date_input("選擇分析日期:", value=datetime.today().date())
+
+# 健康目標部分
 goal = st.selectbox("健康目標:", ["weight_loss", "maintain", "muscle_gain"])
 
+# 生成健康建議按鈕
 if st.button("📊 生成健康建議"):
-    if st.session_state.tdee:  # 確保 TDEE 已計算
-        food_list = [{"Food Name": name.strip(), "Quantity": int(qty.strip())} for name, qty in zip(food_names.split(","), quantities.split(","))]
+    if st.session_state.tdee:
         response = requests.post(
             "http://127.0.0.1:8080/recommendation",
-            json={"foods": food_list, "goal": goal, "tdee": st.session_state.tdee}
+            json={"analysis_date": str(analysis_date), "tdee": st.session_state.tdee, "goal": goal}
         )
         if response.status_code == 200:
             result = response.json()
             recommendations = result["recommendations"]
+            suggested_recipes = result.get("recommended_recipes", [])
 
             # 顯示健康建議
             st.markdown("### 🥗 個性化健康建議")
@@ -73,36 +127,23 @@ if st.button("📊 生成健康建議"):
                 else:
                     st.success(f"🟢 **{nutrient}:** {suggestion}")
 
-            # 繪製條形圖
-            nutrient_labels = []
-            nutrient_values = []
-            nutrient_colors = []
+            # 顯示推薦菜餚
+            st.markdown("### 🍽️ 推薦菜餚")
+            if suggested_recipes:
+                for index, recipe in enumerate(suggested_recipes):
+                    st.markdown(
+                        f"""
+                        **Top {index + 1} 推薦：**  
+                        **{recipe['name']}**  
+                        食譜網址： [點擊這裡]({recipe['url']})
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    st.image(recipe['image_url'])
 
-            for nutrient, suggestion in recommendations.items():
-                if "too high" in suggestion:
-                    nutrient_labels.append(nutrient)
-                    nutrient_values.append(-1)  # 過高為負數
-                    nutrient_colors.append("red")
-                elif "too low" in suggestion:
-                    nutrient_labels.append(nutrient)
-                    nutrient_values.append(1)  # 過低為正數
-                    nutrient_colors.append("orange")
-                else:
-                    nutrient_labels.append(nutrient)
-                    nutrient_values.append(0)  # 正常為 0
-                    nutrient_colors.append("green")
-
-            fig, ax = plt.subplots(figsize=(8, 5))
-            bars = ax.barh(nutrient_labels, nutrient_values, color=nutrient_colors)
-            ax.set_xlabel("Recommendation Status")
-            ax.set_ylabel("Nutrients")
-            ax.set_title("Nutrient Recommendation Overview")
-            ax.set_xlim(-1.5, 1.5)
-            ax.set_xticks([-1, 0, 1])
-            ax.set_xticklabels(["Too High", "Optimal", "Too Low"])
-            st.pyplot(fig)
-
+            else:
+                st.warning("未找到推薦的菜餚。")
         else:
-            st.error("生成健康建議出錯！")
+            st.error("生成健康建議出錯！！" + response.text)
     else:
         st.error("請先計算 BMR 和 TDEE！")
