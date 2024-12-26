@@ -27,7 +27,7 @@ This project leverages nutritional data to provide precise dietary recommendatio
 
 ## 🛠 **System Architecture**
 
-![System Architecture](https://hackmd.io/_uploads/r1Kw87uBJe.png)
+![System Architecture](https://i.imgur.com/2iN9J7P.png)
 
 The system consists of:
 1. **Input Layer**: Users provide personal data (age, weight, height, gender) and dietary records.
