@@ -86,6 +86,7 @@ def calculate_total_nutrition(input_foods):
 
     # 計算總營養
     total_nutrition = {"Calories": 0, "Protein": 0, "Fiber": 0, "Fats": 0, "Carbs": 0, "Sugar": 0}
+
     for food in food_nutrition:
         total_nutrition["Calories"] += food["Calories"]
         total_nutrition["Protein"] += food["Protein"]
@@ -96,3 +97,19 @@ def calculate_total_nutrition(input_foods):
 
     return total_nutrition
 
+
+def calculate_recom_nutrition(eat_total, tdee, health_goal):
+    goal_factor = {'weight_loss': 0.8, 'maintain': 1.0, 'muscle_gain': 1.2}
+
+    total_dri = {k: v * (tdee / 2000) * goal_factor[health_goal] for k, v in base_dri.items()}
+    
+    recom_nutrition = {"Calories": 0, "Protein": 0, "Fiber": 0, "Fats": 0, "Carbs": 0, "Sugar": 0}
+
+    recom_nutrition["Calories"] = total_dri["Calories"] - eat_total["Calories"]
+    recom_nutrition["Protein"] = total_dri["Protein"] - eat_total["Protein"]
+    recom_nutrition["Fats"] = total_dri["Fats"] - eat_total["Fats"]
+    recom_nutrition["Fiber"] = total_dri["Fiber"] - eat_total["Fiber"]
+    recom_nutrition["Carbs"] = total_dri["Carbs"] - eat_total["Carbs"]
+    recom_nutrition["Sugar"] = total_dri["Sugar"] - eat_total["Sugar"]
+
+    return recom_nutrition

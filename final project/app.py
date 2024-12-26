@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import pandas as pd
 import os
 import pickle
-from analysis import calculate_bmr, calculate_tdee, generate_optimized_suggestions
+from analysis import calculate_bmr, calculate_tdee, generate_optimized_suggestions,calculate_total_nutrition , calculate_recom_nutrition
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
@@ -63,16 +63,22 @@ def recommend_recipes(nutrient_needs):
         nutrient_needs["Sugar"]       # 糖分
     ]])
 
-    input_scaled = scaler.fit_transform(input_features)
+    input_scaled = scaler.transform(input_features)
 
     # 計算與使用者輸入的相似度分數
-    similarity_scores = xgboost_model.predict(input_scaled) * all_scores
+    similarity_scores = abs(xgboost_model.predict(input_scaled) - all_scores)
 
     # 將分數加入到數據集中
+    # 確保 'match_score' 欄位不存在
+    if 'match_score' in recipes_df.columns:
+        recipes_df.drop(columns=['match_score'], inplace=True)
+
+    # 新增 'match_score' 欄位
     recipes_df['match_score'] = similarity_scores
 
     # 找出匹配度最高的 Top 5 菜餚
-    top_5 = recipes_df.nlargest(5, "match_score")
+    top_5 = recipes_df.nsmallest(5, "match_score")
+
 
     # 輸出推薦結果：名稱、圖片和超連結
     recommended_recipes = []
@@ -81,7 +87,9 @@ def recommend_recipes(nutrient_needs):
         recipe_info = {
             "name": row['name'],        # 菜餚名稱
             "image_url": row['img_src'],  # 菜餚圖片 URL
-            "url": row['url']           # 完整食譜超連結
+            "url": row['url'],           # 完整食譜超連結
+            # "match_score": row['match_score'],           # 完整食譜超連結
+            # "nutrient_needs": nutrient_needs
         }
         recommended_recipes.append(recipe_info)
 
@@ -128,8 +136,11 @@ def recommendation():
         recommendations = generate_optimized_suggestions(input_foods, tdee, goal)
 
         # 根據需求推薦菜餚
-        total_nutrients = {"Calories": tdee, "Protein": 50, "Carbs": 300, "Fiber": 70, "Fats": 70, "Sugar":100}
-        recommended_recipes = recommend_recipes(total_nutrients)
+        
+        total_nutrients = calculate_total_nutrition(input_foods)
+        recom_total = calculate_recom_nutrition(total_nutrients, tdee, goal)
+        # recom_total = {"Calories": 0, "Protein": 0, "Carbs": 0, "Fiber": 0, "Fats": 0, "Sugar":0}
+        recommended_recipes = recommend_recipes(recom_total)
 
         return jsonify({
             "recommendations": recommendations,
